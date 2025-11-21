@@ -18,20 +18,22 @@ impl<'a> PeepholeOptimizations {
         if !Self::can_remove_unused_declarators(ctx) {
             return false;
         }
+
         // Unsafe to remove `using`, unable to statically determine usage of [Symbol.dispose].
         if decl.kind.is_using() {
             return false;
         }
-        match &decl.id.kind {
-            BindingPatternKind::BindingIdentifier(ident) => {
+
+        match &decl.id {
+            BindingPattern::BindingIdentifier(ident) => {
                 if let Some(symbol_id) = ident.symbol_id.get() {
                     return ctx.scoping().symbol_is_unused(symbol_id);
                 }
                 false
             }
-            BindingPatternKind::ArrayPattern(ident) => ident.is_empty(),
-            BindingPatternKind::ObjectPattern(ident) => ident.is_empty(),
-            BindingPatternKind::AssignmentPattern(_) => false,
+            BindingPattern::ArrayPattern(ident) => ident.is_empty(),
+            BindingPattern::ObjectPattern(ident) => ident.is_empty(),
+            BindingPattern::AssignmentPattern(_) => false,
         }
     }
 
