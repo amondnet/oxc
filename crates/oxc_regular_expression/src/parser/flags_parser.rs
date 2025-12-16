@@ -6,6 +6,8 @@ use crate::{
     parser::{reader::Reader, span_factory::SpanFactory},
 };
 
+const VALID_FLAGS: [&str; 8] = ["d", "g", "i", "m", "s", "u", "v", "y"];
+
 pub struct FlagsParser<'a> {
     reader: Reader<'a>,
     span_factory: SpanFactory,
@@ -39,6 +41,7 @@ impl<'a> FlagsParser<'a> {
                 return Err(diagnostics::unknown_flag(
                     self.span_factory.create(span_start, span_end),
                     &self.reader.atom(span_start, span_end),
+                    &VALID_FLAGS,
                 ));
             }
 
