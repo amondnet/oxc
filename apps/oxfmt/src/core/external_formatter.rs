@@ -7,9 +7,9 @@ use napi::{
 };
 use serde_json::Value;
 
-/// Type alias for the setup config callback function signature.
+/// Type alias for the init external formatter callback function signature.
 /// Takes num_threads as argument and returns plugin languages.
-pub type JsSetupConfigCb = ThreadsafeFunction<
+pub type JsInitExternalFormatterCb = ThreadsafeFunction<
     // Input arguments
     FnArgs<(u32,)>, // (num_threads,)
     // Return type (what JS function returns)
@@ -62,14 +62,15 @@ type FormatEmbeddedWithConfigCallback =
 type FormatFileWithConfigCallback =
     Arc<dyn Fn(&Value, &str, &str, &str) -> Result<String, String> + Send + Sync>;
 
-/// Callback function type for setup config.
+/// Callback function type for init external formatter.
 /// Takes num_threads and returns plugin languages.
-type SetupConfigCallback = Arc<dyn Fn(usize) -> Result<Vec<String>, String> + Send + Sync>;
+type InitExternalFormatterCallback =
+    Arc<dyn Fn(usize) -> Result<Vec<String>, String> + Send + Sync>;
 
 /// External formatter that wraps a JS callback.
 #[derive(Clone)]
 pub struct ExternalFormatter {
-    pub setup_config: SetupConfigCallback,
+    pub init: InitExternalFormatterCallback,
     pub format_embedded: FormatEmbeddedWithConfigCallback,
     pub format_file: FormatFileWithConfigCallback,
 }
@@ -77,7 +78,7 @@ pub struct ExternalFormatter {
 impl std::fmt::Debug for ExternalFormatter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ExternalFormatter")
-            .field("setup_config", &"<callback>")
+            .field("init", &"<callback>")
             .field("format_embedded", &"<callback>")
             .field("format_file", &"<callback>")
             .finish()
@@ -87,32 +88,31 @@ impl std::fmt::Debug for ExternalFormatter {
 impl ExternalFormatter {
     /// Create an [`ExternalFormatter`] from JS callbacks.
     pub fn new(
-        setup_config_cb: JsSetupConfigCb,
+        init_cb: JsInitExternalFormatterCb,
         format_embedded_cb: JsFormatEmbeddedCb,
         format_file_cb: JsFormatFileCb,
     ) -> Self {
-        let rust_setup_config = wrap_setup_config(setup_config_cb);
+        let rust_init = wrap_init_external_formatter(init_cb);
         let rust_format_embedded = wrap_format_embedded(format_embedded_cb);
         let rust_format_file = wrap_format_file(format_file_cb);
         Self {
-            setup_config: rust_setup_config,
+            init: rust_init,
             format_embedded: rust_format_embedded,
             format_file: rust_format_file,
         }
     }
 
-    /// Setup worker pool using the JS callback.
-    pub fn setup_config(&self, num_threads: usize) -> Result<Vec<String>, String> {
-        (self.setup_config)(num_threads)
+    /// Initialize external formatter using the JS callback.
+    pub fn init(&self, num_threads: usize) -> Result<Vec<String>, String> {
+        (self.init)(num_threads)
     }
 
     /// Convert this external formatter to the oxc_formatter::EmbeddedFormatter type.
     /// The options is captured in the closure and passed to JS on each call.
     pub fn to_embedded_formatter(&self, options: Value) -> oxc_formatter::EmbeddedFormatter {
         let format_embedded = Arc::clone(&self.format_embedded);
-        let callback = Arc::new(move |tag_name: &str, code: &str| {
-            (format_embedded)(&options, tag_name, code)
-        });
+        let callback =
+            Arc::new(move |tag_name: &str, code: &str| (format_embedded)(&options, tag_name, code));
         oxc_formatter::EmbeddedFormatter::new(callback)
     }
 
@@ -142,8 +142,8 @@ impl ExternalFormatter {
 // Therefore, `block_in_place()` is used at the call site
 // to temporarily convert the current async task into a blocking context.
 
-/// Wrap JS `setupConfig` callback as a normal Rust function.
-fn wrap_setup_config(cb: JsSetupConfigCb) -> SetupConfigCallback {
+/// Wrap JS `initExternalFormatter` callback as a normal Rust function.
+fn wrap_init_external_formatter(cb: JsInitExternalFormatterCb) -> InitExternalFormatterCallback {
     Arc::new(move |num_threads: usize| {
         block_on(async {
             #[expect(clippy::cast_possible_truncation)]
@@ -151,9 +151,9 @@ fn wrap_setup_config(cb: JsSetupConfigCb) -> SetupConfigCallback {
             match status {
                 Ok(promise) => match promise.await {
                     Ok(languages) => Ok(languages),
-                    Err(err) => Err(format!("JS setupConfig promise rejected: {err}")),
+                    Err(err) => Err(format!("JS initExternalFormatter promise rejected: {err}")),
                 },
-                Err(err) => Err(format!("Failed to call JS setupConfig callback: {err}")),
+                Err(err) => Err(format!("Failed to call JS initExternalFormatter callback: {err}")),
             }
         })
     })
@@ -164,11 +164,7 @@ fn wrap_format_embedded(cb: JsFormatEmbeddedCb) -> FormatEmbeddedWithConfigCallb
     Arc::new(move |options: &Value, tag_name: &str, code: &str| {
         block_on(async {
             let status = cb
-                .call_async(FnArgs::from((
-                    options.clone(),
-                    tag_name.to_string(),
-                    code.to_string(),
-                )))
+                .call_async(FnArgs::from((options.clone(), tag_name.to_string(), code.to_string())))
                 .await;
             match status {
                 Ok(promise) => match promise.await {

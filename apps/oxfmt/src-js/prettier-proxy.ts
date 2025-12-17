@@ -6,8 +6,8 @@ import type { FormatEmbeddedCodeArgs, FormatFileArgs } from "./prettier-worker.t
 // Used by each exported function
 let pool: Tinypool | null = null;
 
-type SetupResult = string[];
-let setupCache: SetupResult | null = null;
+type InitResult = string[];
+let initResultCache: InitResult | null = null;
 
 // ---
 
@@ -17,11 +17,11 @@ let setupCache: SetupResult | null = null;
  * @param numThreads - Number of worker threads to use (same as Rayon thread count)
  * @returns Array of loaded plugin's `languages` info
  */
-export async function setupConfig(numThreads: number): Promise<SetupResult> {
+export async function initExternalFormatter(numThreads: number): Promise<InitResult> {
   // NOTE: When called from CLI, it's only called once at the beginning.
   // However, when called via API, like `format(fileName, code)`, it may be called multiple times.
   // Therefore, allow it by returning cached result.
-  if (setupCache !== null) return setupCache;
+  if (initResultCache !== null) return initResultCache;
 
   // Initialize worker pool for parallel Prettier formatting
   pool = new Tinypool({
@@ -34,9 +34,9 @@ export async function setupConfig(numThreads: number): Promise<SetupResult> {
   // - Read `plugins` field
   // - Load plugins dynamically and parse `languages` field
   // - Map file extensions and filenames to Prettier parsers
-  setupCache = [];
+  initResultCache = [];
 
-  return setupCache;
+  return initResultCache;
 }
 
 // ---

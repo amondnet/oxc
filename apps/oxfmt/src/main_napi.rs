@@ -10,7 +10,7 @@ use crate::{
     cli::{FormatRunner, Mode, format_command, init_miette, init_rayon, init_tracing},
     core::{
         ConfigResolver, ExternalFormatter, FormatFileStrategy, FormatResult as CoreFormatResult,
-        JsFormatEmbeddedCb, JsFormatFileCb, JsSetupConfigCb, SourceFormatter,
+        JsFormatEmbeddedCb, JsFormatFileCb, JsInitExternalFormatterCb, SourceFormatter,
     },
     lsp::run_lsp,
     stdin::StdinRunner,
@@ -21,7 +21,7 @@ use crate::{
 ///
 /// JS side passes in:
 /// 1. `args`: Command line arguments (process.argv.slice(2))
-/// 2. `setup_config_cb`: Callback to setup worker pool
+/// 2. `init_external_formatter_cb`: Callback to initialize external formatter
 /// 3. `format_embedded_cb`: Callback to format embedded code in templates
 /// 4. `format_file_cb`: Callback to format files
 ///
@@ -34,7 +34,7 @@ use crate::{
 pub async fn run_cli(
     args: Vec<String>,
     #[napi(ts_arg_type = "(numThreads: number) => Promise<string[]>")]
-    setup_config_cb: JsSetupConfigCb,
+    init_external_formatter_cb: JsInitExternalFormatterCb,
     #[napi(
         ts_arg_type = "(options: Record<string, any>, tagName: string, code: string) => Promise<string>"
     )]
@@ -72,7 +72,7 @@ pub async fn run_cli(
             let result = StdinRunner::new(command)
                 // Create external formatter from JS callback
                 .with_external_formatter(Some(ExternalFormatter::new(
-                    setup_config_cb,
+                    init_external_formatter_cb,
                     format_embedded_cb,
                     format_file_cb,
                 )))
@@ -88,7 +88,7 @@ pub async fn run_cli(
             let result = FormatRunner::new(command)
                 // Create external formatter from JS callback
                 .with_external_formatter(Some(ExternalFormatter::new(
-                    setup_config_cb,
+                    init_external_formatter_cb,
                     format_embedded_cb,
                     format_file_cb,
                 )))
@@ -120,7 +120,7 @@ pub async fn format(
     source_text: String,
     options: Option<Value>,
     #[napi(ts_arg_type = "(numThreads: number) => Promise<string[]>")]
-    setup_config_cb: JsSetupConfigCb,
+    init_external_formatter_cb: JsInitExternalFormatterCb,
     #[napi(
         ts_arg_type = "(options: Record<string, any>, tagName: string, code: string) => Promise<string>"
     )]
@@ -133,7 +133,7 @@ pub async fn format(
     let num_of_threads = 1;
 
     let external_formatter =
-        ExternalFormatter::new(setup_config_cb, format_embedded_cb, format_file_cb);
+        ExternalFormatter::new(init_external_formatter_cb, format_embedded_cb, format_file_cb);
 
     // Create resolver from options and resolve format options
     let mut config_resolver = ConfigResolver::from_value(options.unwrap_or_default());
@@ -148,7 +148,7 @@ pub async fn format(
     }
 
     // Use `block_in_place()` to avoid nested async runtime access
-    match tokio::task::block_in_place(|| external_formatter.setup_config(num_of_threads)) {
+    match tokio::task::block_in_place(|| external_formatter.init(num_of_threads)) {
         // TODO: Plugins support
         Ok(_) => {}
         Err(err) => {

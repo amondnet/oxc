@@ -67,19 +67,20 @@ impl FormatService {
             let resolved_options = self.config_resolver.resolve(&entry);
 
             tracing::debug!("Format {}", path.strip_prefix(&self.cwd).unwrap().display());
-            let (code, is_changed) = match self.formatter.format(&entry, &source_text, &resolved_options) {
-                FormatResult::Success { code, is_changed } => (code, is_changed),
-                FormatResult::Error(diagnostics) => {
-                    let errors = DiagnosticService::wrap_diagnostics(
-                        self.cwd.clone(),
-                        path,
-                        &source_text,
-                        diagnostics,
-                    );
-                    tx_error.send(errors).unwrap();
-                    return;
-                }
-            };
+            let (code, is_changed) =
+                match self.formatter.format(&entry, &source_text, &resolved_options) {
+                    FormatResult::Success { code, is_changed } => (code, is_changed),
+                    FormatResult::Error(diagnostics) => {
+                        let errors = DiagnosticService::wrap_diagnostics(
+                            self.cwd.clone(),
+                            path,
+                            &source_text,
+                            diagnostics,
+                        );
+                        tx_error.send(errors).unwrap();
+                        return;
+                    }
+                };
 
             // Write back if needed
             if matches!(self.format_mode, OutputMode::Write) && is_changed {

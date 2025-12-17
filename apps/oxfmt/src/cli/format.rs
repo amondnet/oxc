@@ -92,7 +92,7 @@ impl FormatRunner {
             self.external_formatter
                 .as_ref()
                 .expect("External formatter must be set when `napi` feature is enabled")
-                .setup_config(num_of_threads)
+                .init(num_of_threads)
         }) {
             // TODO: Plugins support
             // - Parse returned `languages`
