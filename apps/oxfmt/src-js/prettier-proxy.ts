@@ -102,3 +102,119 @@ export async function formatFile(
     name: "formatFile",
   });
 }
+
+// ---
+
+// Optional: Tailwind sorter (initialized lazily on first use)
+// Import types only to avoid runtime error if plugin is not installed
+import type {
+  BatchSortContext,
+  PluginOptions,
+  TransformerEnv,
+} from "prettier-plugin-tailwindcss";
+
+let tailwindSorter: BatchSortContext | null = null;
+let tailwindSorterInitialized = false;
+
+// Store Tailwind options set via setTailwindOptions
+let storedTailwindOptions: PluginOptions | null = null;
+
+/**
+ * Tailwind CSS options passed from the format API.
+ * These match the options from `prettier-plugin-tailwindcss`.
+ */
+export interface TailwindOptions {
+  tailwindConfig?: string;
+  tailwindStylesheet?: string;
+  tailwindFunctions?: string[];
+  tailwindAttributes?: string[];
+  tailwindPreserveWhitespace?: boolean;
+  tailwindPreserveDuplicates?: boolean;
+}
+
+/**
+ * Set Tailwind CSS options for class sorting.
+ * Called from the format function before processing.
+ * @param options - Tailwind options or undefined to clear
+ */
+export function setTailwindOptions(options: TailwindOptions | undefined): void {
+  if (options) {
+    storedTailwindOptions = {
+      tailwindConfig: options.tailwindConfig,
+      tailwindStylesheet: options.tailwindStylesheet,
+      tailwindFunctions: options.tailwindFunctions,
+      tailwindAttributes: options.tailwindAttributes,
+      tailwindPreserveWhitespace: options.tailwindPreserveWhitespace,
+      tailwindPreserveDuplicates: options.tailwindPreserveDuplicates,
+    };
+  } else {
+    storedTailwindOptions = null;
+  }
+  // Reset sorter so it gets re-initialized with new options
+  tailwindSorter = null;
+  tailwindSorterInitialized = false;
+}
+
+/**
+ * Create a batch sorter context using the patched plugin's exported functions.
+ * This implements the BatchSortContext interface locally.
+ */
+async function createBatchSorter(): Promise<BatchSortContext> {
+  // Dynamic import to get the patched plugin's exports
+  const { getTailwindConfig, sortClasses } = await import("prettier-plugin-tailwindcss");
+
+  // Build options for getTailwindConfig
+  const configOptions: Partial<PluginOptions & { filepath?: string }> = {
+    filepath: process.cwd(),
+    ...storedTailwindOptions,
+  };
+
+  // Load Tailwind context with options
+  const context = await getTailwindConfig(configOptions);
+
+  // Create transformer env with stored options
+  const env: TransformerEnv = {
+    context,
+    options: storedTailwindOptions ?? {},
+  };
+
+  return {
+    sortClasses(classes: string[]): string[] {
+      return classes.map((classStr) => {
+        try {
+          return sortClasses(classStr, { env });
+        } catch {
+          // Failed to sort, return original
+          return classStr;
+        }
+      });
+    },
+  };
+}
+
+/**
+ * Process Tailwind CSS classes found in JSX attributes.
+ * NOTE: Called from Rust via NAPI ThreadsafeFunction
+ * @param classes - Array of class strings found in JSX class/className attributes
+ * @returns Array of sorted class strings (same order/length as input)
+ */
+export async function processTailwindClasses(classes: string[]): Promise<string[]> {
+  // Initialize sorter on first call (lazy)
+  if (!tailwindSorterInitialized) {
+    tailwindSorterInitialized = true;
+    try {
+      tailwindSorter = await createBatchSorter();
+    } catch {
+      // Plugin not installed or failed to initialize - sorting will be skipped
+      tailwindSorter = null;
+    }
+  }
+
+  // If sorter not available, return original classes
+  if (!tailwindSorter) {
+    return classes;
+  }
+
+  // Sort all classes
+  return tailwindSorter.sortClasses(classes);
+}

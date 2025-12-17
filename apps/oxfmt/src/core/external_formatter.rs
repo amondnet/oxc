@@ -6,7 +6,7 @@ use napi::{
     threadsafe_function::ThreadsafeFunction,
 };
 
-use oxc_formatter::EmbeddedFormatterCallback;
+use oxc_formatter::{EmbeddedFormatterCallback, TailwindCallback};
 
 /// Type alias for the setup config callback function signature.
 /// Takes (config_json, num_threads) as arguments and returns plugin languages.
@@ -53,6 +53,16 @@ pub type JsFormatFileCb = ThreadsafeFunction<
     false,
 >;
 
+/// Type alias for Tailwind class processing callback.
+/// Takes array of class strings and returns sorted array.
+pub type JsTailwindCb = ThreadsafeFunction<
+    Vec<String>,          // Input: array of class strings
+    Promise<Vec<String>>, // Return: promise of sorted array
+    Vec<String>,
+    Status,
+    false,
+>;
+
 /// Callback function type for formatting files.
 /// Takes (parser_name, file_name, code) and returns formatted code or an error.
 type FormatFileCallback = Arc<dyn Fn(&str, &str, &str) -> Result<String, String> + Send + Sync>;
@@ -67,6 +77,7 @@ pub struct ExternalFormatter {
     pub setup_config: SetupConfigCallback,
     pub format_embedded: EmbeddedFormatterCallback,
     pub format_file: FormatFileCallback,
+    pub process_tailwind: TailwindCallback,
 }
 
 impl std::fmt::Debug for ExternalFormatter {
@@ -75,6 +86,7 @@ impl std::fmt::Debug for ExternalFormatter {
             .field("setup_config", &"<callback>")
             .field("format_embedded", &"<callback>")
             .field("format_file", &"<callback>")
+            .field("process_tailwind", &"<callback>")
             .finish()
     }
 }
@@ -85,14 +97,17 @@ impl ExternalFormatter {
         setup_config_cb: JsSetupConfigCb,
         format_embedded_cb: JsFormatEmbeddedCb,
         format_file_cb: JsFormatFileCb,
+        tailwind_cb: JsTailwindCb,
     ) -> Self {
         let rust_setup_config = wrap_setup_config(setup_config_cb);
         let rust_format_embedded = wrap_format_embedded(format_embedded_cb);
         let rust_format_file = wrap_format_file(format_file_cb);
+        let rust_tailwind = wrap_tailwind(tailwind_cb);
         Self {
             setup_config: rust_setup_config,
             format_embedded: rust_format_embedded,
             format_file: rust_format_file,
+            process_tailwind: rust_tailwind,
         }
     }
 
@@ -197,6 +212,27 @@ fn wrap_format_file(cb: JsFormatFileCb) -> FormatFileCallback {
                 Err(err) => Err(format!(
                     "Failed to call JS formatFile callback for file: '{file_name}', parser: '{parser_name}': {err}"
                 )),
+            }
+        })
+    })
+}
+
+/// Wrap JS `processTailwindClasses` callback as a normal Rust function.
+fn wrap_tailwind(cb: JsTailwindCb) -> TailwindCallback {
+    Arc::new(move |classes: Vec<String>| {
+        block_on(async {
+            match cb.call_async(classes.clone()).await {
+                Ok(promise) => match promise.await {
+                    Ok(sorted) => sorted,
+                    Err(_) => {
+                        // Return original classes on error
+                        classes
+                    }
+                },
+                Err(_) => {
+                    // Return original classes on error
+                    classes
+                }
             }
         })
     })

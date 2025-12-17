@@ -11,7 +11,7 @@ use crate::{
     cli::{FormatRunner, Mode, format_command, init_miette, init_rayon, init_tracing},
     core::{
         ExternalFormatter, FormatFileStrategy, FormatResult as CoreFormatResult,
-        JsFormatEmbeddedCb, JsFormatFileCb, JsSetupConfigCb, SourceFormatter,
+        JsFormatEmbeddedCb, JsFormatFileCb, JsSetupConfigCb, JsTailwindCb, SourceFormatter,
     },
     lsp::run_lsp,
     stdin::StdinRunner,
@@ -25,6 +25,7 @@ use crate::{
 /// 2. `setup_config_cb`: Callback to setup Prettier config
 /// 3. `format_embedded_cb`: Callback to format embedded code in templates
 /// 4. `format_file_cb`: Callback to format files
+/// 5. `tailwind_cb`: Callback to process Tailwind CSS classes
 ///
 /// Returns a tuple of `[mode, exitCode]`:
 /// - `mode`: If main logic will run in JS side, use this to indicate which mode
@@ -42,6 +43,7 @@ pub async fn run_cli(
         ts_arg_type = "(parserName: string, fileName: string, code: string) => Promise<string>"
     )]
     format_file_cb: JsFormatFileCb,
+    #[napi(ts_arg_type = "(classes: string[]) => Promise<string[]>")] tailwind_cb: JsTailwindCb,
 ) -> (String, Option<u8>) {
     // Convert String args to OsString for compatibility with bpaf
     let args: Vec<OsString> = args.into_iter().map(OsString::from).collect();
@@ -69,11 +71,12 @@ pub async fn run_cli(
             init_miette();
 
             let result = StdinRunner::new(command)
-                // Create external formatter from JS callback
+                // Create external formatter from JS callbacks
                 .with_external_formatter(Some(ExternalFormatter::new(
                     setup_config_cb,
                     format_embedded_cb,
                     format_file_cb,
+                    tailwind_cb,
                 )))
                 .run();
 
@@ -85,11 +88,12 @@ pub async fn run_cli(
             init_rayon(command.runtime_options.threads);
 
             let result = FormatRunner::new(command)
-                // Create external formatter from JS callback
+                // Create external formatter from JS callbacks
                 .with_external_formatter(Some(ExternalFormatter::new(
                     setup_config_cb,
                     format_embedded_cb,
                     format_file_cb,
+                    tailwind_cb,
                 )))
                 .run();
 
@@ -126,11 +130,12 @@ pub async fn format(
         ts_arg_type = "(parserName: string, fileName: string, code: string) => Promise<string>"
     )]
     format_file_cb: JsFormatFileCb,
+    #[napi(ts_arg_type = "(classes: string[]) => Promise<string[]>")] tailwind_cb: JsTailwindCb,
 ) -> FormatResult {
     let num_of_threads = 1;
 
     let external_formatter =
-        ExternalFormatter::new(setup_config_cb, format_embedded_cb, format_file_cb);
+        ExternalFormatter::new(setup_config_cb, format_embedded_cb, format_file_cb, tailwind_cb);
 
     // Determine format strategy from file path
     let Ok(entry) = FormatFileStrategy::try_from(PathBuf::from(&filename)) else {

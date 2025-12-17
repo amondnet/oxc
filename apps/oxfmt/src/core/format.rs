@@ -97,16 +97,25 @@ impl SourceFormatter {
 
         #[cfg(feature = "napi")]
         let formatted = {
-            if self.format_options.embedded_language_formatting.is_off() {
-                base_formatter.format(&ret.program)
+            let external_formatter = self
+                .external_formatter
+                .as_ref()
+                .expect("`external_formatter` must exist when `napi` feature is enabled");
+
+            let embedded_formatter =
+                if self.format_options.embedded_language_formatting.is_off() {
+                    None
+                } else {
+                    Some(external_formatter.to_embedded_formatter())
+                };
+
+            let tailwind_callback = if self.format_options.experimental_tailwindcss.is_some() {
+                Some(&external_formatter.process_tailwind)
             } else {
-                let embedded_formatter = self
-                    .external_formatter
-                    .as_ref()
-                    .expect("`external_formatter` must exist when `napi` feature is enabled")
-                    .to_embedded_formatter();
-                base_formatter.format_with_embedded(&ret.program, embedded_formatter)
-            }
+                None
+            };
+
+            base_formatter.format_with_all(&ret.program, embedded_formatter, tailwind_callback)
         };
         #[cfg(not(feature = "napi"))]
         let formatted = base_formatter.format(&ret.program);
