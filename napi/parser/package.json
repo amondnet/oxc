@@ -22,6 +22,7 @@
   "main": "src-js/index.js",
   "browser": "src-js/wasm.js",
   "files": [
+    "src-js/bindings.js",
     "src-js/generated/constants.js",
     "src-js/generated/deserialize/js.js",
     "src-js/generated/deserialize/js_range.js",
@@ -34,7 +35,6 @@
     "src-js/generated/visit/type_ids.js",
     "src-js/generated/visit/visitor.d.ts",
     "src-js/generated/visit/walk.js",
-    "src-js/bindings.js",
     "src-js/index.d.ts",
     "src-js/index.js",
     "src-js/raw-transfer/common.js",
