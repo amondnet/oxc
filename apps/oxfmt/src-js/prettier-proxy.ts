@@ -107,11 +107,7 @@ export async function formatFile(
 
 // Optional: Tailwind sorter (initialized lazily on first use)
 // Import types only to avoid runtime error if plugin is not installed
-import type {
-  BatchSortContext,
-  PluginOptions,
-  TransformerEnv,
-} from "prettier-plugin-tailwindcss";
+import type { BatchSortContext, PluginOptions, TransformerEnv } from "prettier-plugin-tailwindcss";
 
 let tailwindSorter: BatchSortContext | null = null;
 let tailwindSorterInitialized = false;

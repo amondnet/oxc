@@ -102,12 +102,11 @@ impl SourceFormatter {
                 .as_ref()
                 .expect("`external_formatter` must exist when `napi` feature is enabled");
 
-            let embedded_formatter =
-                if self.format_options.embedded_language_formatting.is_off() {
-                    None
-                } else {
-                    Some(external_formatter.to_embedded_formatter())
-                };
+            let embedded_formatter = if self.format_options.embedded_language_formatting.is_off() {
+                None
+            } else {
+                Some(external_formatter.to_embedded_formatter())
+            };
 
             let tailwind_callback = if self.format_options.experimental_tailwindcss.is_some() {
                 Some(&external_formatter.process_tailwind)
